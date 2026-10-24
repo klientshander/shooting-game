@@ -11,6 +11,8 @@ _ROOT = str(Path(__file__).resolve().parent.parent)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from settings import asset_path
+
 try:
     from game.projectiles import Projectile
 except ModuleNotFoundError:
@@ -24,7 +26,7 @@ def get_satellite_sprite():
     global _satellite_sprite
     if _satellite_sprite is None:
         try:
-            raw = pygame.image.load("assets/player_satellite_tight.png").convert_alpha()
+            raw = pygame.image.load(asset_path("player_satellite_tight.png")).convert_alpha()
             _satellite_sprite = pygame.transform.smoothscale(raw, (76, 88))
         except Exception:
             _satellite_sprite = None

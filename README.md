@@ -27,6 +27,17 @@ python main.py
 
 Or double-click `run_game.bat` on Windows.
 
+## Build a Windows release
+
+On Windows, install the build dependencies and create a standalone release folder:
+
+```powershell
+python -m pip install -r requirements-build.txt
+.\build_windows.bat
+```
+
+The distributable is `dist/cosmic-rift-windows.zip` (or the `dist/Cosmic Rift/` folder). Recipients can extract the archive and launch `Cosmic Rift.exe` without installing Python. Save data is stored in `%LOCALAPPDATA%\Cosmic Rift\highscore.json`.
+
 ## Controls
 
 | Input | Action |

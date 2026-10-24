@@ -10,7 +10,7 @@ _ROOT = str(Path(__file__).resolve().parent.parent)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from settings import HEIGHT, WIDTH
+from settings import HEIGHT, WIDTH, asset_path
 
 
 _BOSS_SPRITE = None
@@ -20,7 +20,7 @@ def _get_boss_sprite():
     global _BOSS_SPRITE
     if _BOSS_SPRITE is None:
         try:
-            raw = pygame.image.load("assets/enemy_alien_tight.png").convert_alpha()
+            raw = pygame.image.load(asset_path("enemy_alien_tight.png")).convert_alpha()
             base = pygame.transform.smoothscale(raw, (160, 122))
             tinted = base.copy()
             tinted.fill((75, 15, 70, 0), special_flags=pygame.BLEND_RGB_ADD)

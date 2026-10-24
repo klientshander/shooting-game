@@ -5,6 +5,8 @@ import random
 
 import pygame
 
+from settings import asset_path
+
 
 ENEMY_TYPES = ("scout", "tank", "hunter", "bomber", "elite", "charger")
 COLORS = {
@@ -121,7 +123,7 @@ def _get_ufo_sprite(kind, radius):
         return _UFO_SPRITES[key]
 
     try:
-        raw = pygame.image.load("assets/enemy_alien_tight.png").convert_alpha()
+        raw = pygame.image.load(asset_path("enemy_alien_tight.png")).convert_alpha()
         w = int(radius * 2.5)
         h = int(radius * 1.9)
         base = pygame.transform.smoothscale(raw, (w, h))
@@ -440,4 +442,3 @@ class Enemy:
             for div in (0.25, 0.50, 0.75):
                 nx = bx + int(bar_w * div)
                 pygame.draw.line(surface, (12, 16, 38), (nx, by), (nx, by + bar_h - 1), 1)
-

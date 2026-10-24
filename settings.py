@@ -1,5 +1,9 @@
 """Shared display, color palette, character, and skill definitions for COSMIC RIFT: Starfall."""
 
+import os
+import sys
+from pathlib import Path
+
 WIDTH = 1280
 HEIGHT = 720
 FPS = 60
@@ -14,7 +18,20 @@ MAGENTA = (235, 75, 245)
 GOLD = (255, 215, 80)
 ORANGE = (255, 130, 45)
 
-SAVE_PATH = "assets/saves/highscore.json"
+if getattr(sys, "frozen", False):
+    SAVE_PATH = str(
+        Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        / "Cosmic Rift"
+        / "highscore.json"
+    )
+else:
+    SAVE_PATH = "assets/saves/highscore.json"
+
+_ASSET_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets"
+
+
+def asset_path(filename: str) -> str:
+    return str(_ASSET_ROOT / filename)
 
 CHARACTERS = [
     {"name": "ASTRA", "color": (88, 231, 255), "description": "Balanced Starblade", "health": 4, "speed": 1.0, "damage": 1},
