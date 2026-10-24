@@ -40,7 +40,7 @@ The distributable is `dist/cosmic-rift-windows.zip` (or the `dist/Cosmic Rift/` 
 
 ## Play in a web browser
 
-The game is built for GitHub Pages whenever changes are pushed to `main`. Once the Pages deployment finishes, play at:
+The browser build is published to the `gh-pages` branch whenever changes are pushed to `main`. To enable the website the first time, open the repository's **Settings → Pages**, choose **Deploy from a branch**, select **gh-pages** and **/(root)**, then save. After GitHub Pages finishes deploying, play at:
 
 <https://klientshander.github.io/shooting-game/>
 
