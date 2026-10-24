@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -189,8 +190,17 @@ class CosmicRift:
 
     def _load_save(self) -> dict:
         try:
-            with open(SAVE_PATH, "r", encoding="utf-8") as save_file:
-                data = json.load(save_file)
+            if sys.platform == "emscripten":
+                import js
+
+                saved_data = js.localStorage.getItem("cosmic-rift-save")
+                if saved_data is None:
+                    data = {}
+                else:
+                    data = json.loads(saved_data)
+            else:
+                with open(SAVE_PATH, "r", encoding="utf-8") as save_file:
+                    data = json.load(save_file)
             return {
                 "high_score": max(0, int(data.get("high_score", 0))),
                 "best_time": max(0.0, float(data.get("best_time", 0.0))),
@@ -202,19 +212,22 @@ class CosmicRift:
             return {"high_score": 0, "best_time": 0.0, "fullscreen": False, "character": 0, "bg_setting": "solarsystem"}
 
     def _save_high_score(self) -> None:
+        data = {
+            "high_score": self.high_score,
+            "best_time": self.best_time,
+            "fullscreen": self.fullscreen,
+            "character": self.character_index,
+            "bg_setting": self.bg_setting,
+        }
+        if sys.platform == "emscripten":
+            import js
+
+            js.localStorage.setItem("cosmic-rift-save", json.dumps(data))
+            return
+
         os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)
         with open(SAVE_PATH, "w", encoding="utf-8") as save_file:
-            json.dump(
-                {
-                    "high_score": self.high_score,
-                    "best_time": self.best_time,
-                    "fullscreen": self.fullscreen,
-                    "character": self.character_index,
-                    "bg_setting": self.bg_setting,
-                },
-                save_file,
-                indent=2,
-            )
+            json.dump(data, save_file, indent=2)
 
     def reset_game(self) -> None:
         """Reset all game objects and difficulty progression for a fresh run."""
@@ -951,7 +964,7 @@ class CosmicRift:
         self.screen.blit(scaled, (0, 0))
         pygame.display.flip()
 
-    def run(self) -> None:
+    async def run(self) -> None:
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
 
@@ -1116,9 +1129,16 @@ class CosmicRift:
                 self.webthreads.update(dt, mouse_pos=self.canvas_mouse)
             self._draw(dt)
 
-        pygame.quit()
-        sys.exit()
+            await asyncio.sleep(0)
+
+        if sys.platform != "emscripten":
+            pygame.quit()
+
+
+async def main() -> None:
+    game = CosmicRift()
+    await game.run()
 
 
 if __name__ == "__main__":
-    CosmicRift().run()
+    asyncio.run(main())

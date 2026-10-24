@@ -38,6 +38,23 @@ python -m pip install -r requirements-build.txt
 
 The distributable is `dist/cosmic-rift-windows.zip` (or the `dist/Cosmic Rift/` folder). Recipients can extract the archive and launch `Cosmic Rift.exe` without installing Python. Save data is stored in `%LOCALAPPDATA%\Cosmic Rift\highscore.json`.
 
+## Play in a web browser
+
+The game is built for GitHub Pages whenever changes are pushed to `main`. Once the Pages deployment finishes, play at:
+
+<https://klientshander.github.io/shooting-game/>
+
+The first visit may take a little while to load the browser runtime. Use WASD or the arrow keys to move, Shift to dash, Q for the rift pulse, and Escape to pause. Browser highscores and settings are stored in local browser storage.
+
+To build and preview the browser version locally:
+
+```powershell
+python -m pip install pygbag
+python -m pygbag main.py
+```
+
+Then open <http://localhost:8000>. The web build uses the Python collision fallback; the optional C++ extension is only for desktop builds.
+
 ## Controls
 
 | Input | Action |
