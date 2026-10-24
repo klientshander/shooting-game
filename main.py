@@ -238,7 +238,8 @@ class CosmicRift:
         self.upgrade_message = ""
         self.upgrade_timer = 0.0
         self.last_score_saved = False
-        self.ambient_pickup_timer = 15.0
+        self.ambient_pickup_timer = 20.0
+        self.two_min_alert_triggered = False
 
         # Background selection for fresh run
         if self.bg_setting == "random":
@@ -499,6 +500,15 @@ class CosmicRift:
             self.upgrade_message = f"WARNING: COSMIC BOSS APPROACHING (MILESTONE {self.boss.milestone})"
             self.upgrade_timer = 4.0
 
+        # 2-Minute Difficulty Surge Alert
+        if not getattr(self, "two_min_alert_triggered", False) and self.waves.survival_time >= 120.0:
+            self.two_min_alert_triggered = True
+            self.upgrade_message = "THREAT OVERLOAD: 2 MINUTES SURVIVED - MAXIMUM HOSTILITY ENGAGED!"
+            self.upgrade_timer = 4.5
+            self.audio.play("boss")
+            self.shake = max(self.shake, 14.0)
+            self.solarsystem.trigger_flare(2.0)
+
         # Ambient random floating orb drifting across space every ~22 seconds
         self.ambient_pickup_timer -= dt
         if self.ambient_pickup_timer <= 0.0:
@@ -507,7 +517,11 @@ class CosmicRift:
 
         # Update straight-line enemies (strictly straight horizontal movement, no shooting)
         for enemy in self.enemies:
-            enemy.update(dt, self.player.x, self.player.y)
+            ev = enemy.update(dt, self.player.x, self.player.y)
+            if ev == "warning":
+                self.audio.play("warning")
+            elif ev == "sprint":
+                self.audio.play("dash")
 
         # Trigger secondary kills from meteor explosion chain
         chain_defeated = [enemy for enemy in self.enemies if enemy.health <= 0]
@@ -584,7 +598,13 @@ class CosmicRift:
             if shot_index < len(self.projectiles) and enemy_index < len(self.enemies):
                 shot, enemy = self.projectiles[shot_index], self.enemies[enemy_index]
                 if shot.alive and enemy.health > 0:
-                    shot.alive = False
+                    # Piercing shots pass through enemies, damaging each enemy once
+                    if id(enemy) in getattr(shot, "hit_enemies", ()):
+                        continue
+                    if getattr(shot, "piercing", False):
+                        shot.hit_enemies.add(id(enemy))
+                    else:
+                        shot.alive = False
                     critical = random.random() < 0.14
                     damage = shot.damage * (2 if critical else 1)
                     enemy.health -= damage
@@ -603,10 +623,14 @@ class CosmicRift:
             for shot in self.projectiles:
                 if (
                     shot.alive
+                    and id(self.boss) not in getattr(shot, "hit_enemies", ())
                     and math.hypot(shot.x - self.boss.x, shot.y - self.boss.y)
                     < self.boss.radius + shot.radius
                 ):
-                    shot.alive = False
+                    if getattr(shot, "piercing", False):
+                        shot.hit_enemies.add(id(self.boss))
+                    else:
+                        shot.alive = False
                     critical = random.random() < 0.14
                     damage = shot.damage * (2 if critical else 1)
                     self.boss.health -= damage

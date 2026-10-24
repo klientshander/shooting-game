@@ -54,12 +54,16 @@ class Player:
         self.ultimate_charges = 0
         self.max_ultimate_charges = 3
 
+        # Star-Shield is active until hit (no countdown timer!)
+        self.shield_active = False
+
         # Temporary skill pickup timers (all start at 0.0)
         self.skill_timers = {
             "attack_speed": 0.0,
             "split_bullets": 0.0,
             "shield": 0.0,
             "meteor_explosion": 0.0,
+            "piercing": 0.0,
         }
 
     @property
@@ -70,7 +74,7 @@ class Player:
 
     @property
     def has_shield(self) -> bool:
-        return self.skill_timers["shield"] > 0
+        return self.shield_active
 
     @property
     def has_split_bullets(self) -> bool:
@@ -81,23 +85,31 @@ class Player:
         return self.skill_timers["meteor_explosion"] > 0
 
     @property
+    def has_piercing(self) -> bool:
+        return self.skill_timers.get("piercing", 0.0) > 0
+
+    @property
     def is_dashing(self) -> bool:
         return self.dash_time > 0.0
 
     def activate_skill(self, skill_id: str) -> str:
         """Activate the collected floating skill orb."""
         if skill_id == "attack_speed":
-            self.skill_timers["attack_speed"] = 16.0
-            return "SKILL: ATTACK SPEED (16s)"
+            self.skill_timers["attack_speed"] = 20.0
+            return "SKILL: ATTACK SPEED (20s)"
         elif skill_id == "split_bullets":
-            self.skill_timers["split_bullets"] = 16.0
-            return "SKILL: SPLIT BULLETS (16s)"
+            self.skill_timers["split_bullets"] = 30.0
+            return "SKILL: SHOTGUN SPREAD (30s)"
+        elif skill_id == "piercing":
+            self.skill_timers["piercing"] = 20.0
+            return "SKILL: PIERCING BULLETS (20s)"
         elif skill_id == "shield":
-            self.skill_timers["shield"] = 16.0
-            return "SKILL: STAR-SHIELD ACTIVE (16s)"
+            self.shield_active = True
+            self.skill_timers["shield"] = 0.0
+            return "SKILL: STAR-SHIELD ACTIVE (PERMANENT UNTIL HIT)"
         elif skill_id == "meteor_explosion":
-            self.skill_timers["meteor_explosion"] = 16.0
-            return "SKILL: METEOR EXPLOSION (16s)"
+            self.skill_timers["meteor_explosion"] = 20.0
+            return "SKILL: METEOR EXPLOSION (20s)"
         elif skill_id == "ultimate":
             self.ultimate_charges = min(self.max_ultimate_charges, self.ultimate_charges + 1)
             return f"ULTIMATE CHARGED! (x{self.ultimate_charges}) PRESS [Q] TO UNLEASH"
@@ -126,9 +138,9 @@ class Player:
         self.dash_cooldown = max(0.0, self.dash_cooldown - dt)
         self.dash_time = max(0.0, self.dash_time - dt)
 
-        # Decay active skill pickup timers
+        # Decay active skill pickup timers (shield has no timer)
         for k in self.skill_timers:
-            if self.skill_timers[k] > 0:
+            if k != "shield" and self.skill_timers[k] > 0:
                 self.skill_timers[k] = max(0.0, self.skill_timers[k] - dt)
 
         # Automatic continuous shooting straight forward
@@ -145,14 +157,15 @@ class Player:
     def fire(self):
         speed = 880.0
         shots = []
+        is_piercing = self.has_piercing
 
-        # Split Bullets: fires 3-way spread straight ahead only when the pickup is active!
+        # Split Bullets (Shotgun): fires 3-way spread straight ahead only when the pickup is active!
         if self.has_split_bullets:
             spreads = (-0.14, 0.0, 0.14)
-            color = (255, 235, 95)
+            color = (130, 245, 255) if is_piercing else (255, 235, 95)
             for spread in spreads:
                 is_center = abs(spread) < 0.01
-                bolt_color = (120, 240, 255) if is_center else color
+                bolt_color = (255, 255, 255) if is_center and is_piercing else ((120, 240, 255) if is_center else color)
                 bolt_radius = 8 if is_center else 6
                 vx = math.cos(spread) * speed
                 vy = math.sin(spread) * speed
@@ -166,11 +179,21 @@ class Player:
                         bolt_color,
                         self.damage,
                         bolt_radius,
+                        piercing=is_piercing,
                     )
                 )
         else:
             # ONE SINGLE BULLET default stream fired strictly straight forward (+X) from satellite nose
-            color = (255, 140, 255) if self.skill_timers["attack_speed"] > 0 else (88, 231, 255)
+            if is_piercing:
+                color = (110, 245, 255)
+                radius = 9
+            elif self.skill_timers["attack_speed"] > 0:
+                color = (255, 140, 255)
+                radius = 7
+            else:
+                color = (88, 231, 255)
+                radius = 7
+
             shots.append(
                 Projectile(
                     self.x + 38.0,
@@ -179,7 +202,8 @@ class Player:
                     0.0,
                     color,
                     self.damage,
-                    7,
+                    radius,
+                    piercing=is_piercing,
                 )
             )
 
@@ -205,6 +229,7 @@ class Player:
         if self.invulnerable > 0:
             return False
         if self.has_shield:
+            self.shield_active = False
             self.skill_timers["shield"] = 0.0
             self.invulnerable = 0.75
             return True

@@ -42,24 +42,42 @@ class Audio:
         rate = self.RATE
 
         # ------------------------------------------------------------------
-        # 1. SHOOT: Snappy arcade plasma laser (exponential pitch drop + warm body)
+        # 1. SHOOT: Compact firearm report (muzzle crack + powder burst + low body)
+        #
+        # The sound is deliberately short so rapid fire remains distinct.  A noise
+        # transient supplies the gunshot crack; a decaying low-frequency body adds
+        # weight without turning the weapon into a sci-fi laser.
         # ------------------------------------------------------------------
-        dur = 0.082
+        dur = 0.145
         n = int(rate * dur)
         l, r = [], []
+        noise_state_l = 0.0
+        noise_state_r = 0.0
         for i in range(n):
             t = i / rate
             u = i / n
-            freq = 960.0 * math.exp(-3.6 * u) + 120.0
-            phase = 2.0 * math.pi * freq * t
-            env = (1.0 - u) ** 1.35
-            # 75% sine + 25% square harmonic for that punchy plasma bite
-            sq = 1.0 if math.sin(phase) > 0.0 else -1.0
-            raw = (0.78 * math.sin(phase) + 0.22 * sq) * env
-            val = math.tanh(raw * 1.6) * 31000 * 0.28
-            l.append(val)
-            r.append(val)
-        self.sounds["shoot"] = self._pack_stereo(l, r, volume=0.55)
+            # Very fast high-frequency muzzle blast and a longer powder tail.
+            crack_env = math.exp(-u * 34.0)
+            tail_env = math.exp(-u * 6.8)
+            raw_l = rng.uniform(-1.0, 1.0)
+            raw_r = rng.uniform(-1.0, 1.0)
+            # Low-pass the tail, while retaining an unfiltered sharp initial crack.
+            noise_state_l += (raw_l - noise_state_l) * 0.18
+            noise_state_r += (raw_r - noise_state_r) * 0.18
+            crack_l = raw_l * crack_env
+            crack_r = raw_r * crack_env
+            powder_l = noise_state_l * tail_env
+            powder_r = noise_state_r * tail_env
+            # The pressure wave falls from a punchy report into a low thump.
+            body_freq = 175.0 - 65.0 * u
+            body = math.sin(2.0 * math.pi * body_freq * t) * math.exp(-u * 9.0)
+            # A short chamber/mechanical click keeps the report tactile.
+            mechanism = math.sin(2.0 * math.pi * 1180.0 * t) * math.exp(-u * 42.0)
+            left = crack_l * 0.82 + powder_l * 0.32 + body * 0.56 + mechanism * 0.10
+            right = crack_r * 0.82 + powder_r * 0.32 + body * 0.56 + mechanism * 0.10
+            l.append(math.tanh(left * 1.75) * 32700)
+            r.append(math.tanh(right * 1.75) * 32700)
+        self.sounds["shoot"] = self._pack_stereo(l, r, volume=0.58)
 
         # ------------------------------------------------------------------
         # 2. EXPLOSION: Deep space detonation (punch transient + sub-rumble + filtered debris)
@@ -266,6 +284,23 @@ class Audio:
             l.append(val)
             r.append(val)
         self.sounds["hover"] = self._pack_stereo(l, r, volume=0.45)
+
+        # ------------------------------------------------------------------
+        # 12. WARNING: Tactical Charger target-lock alert chime (dual chirp)
+        # ------------------------------------------------------------------
+        dur = 0.16
+        n = int(rate * dur)
+        l, r = [], []
+        for i in range(n):
+            t = i / rate
+            u = i / n
+            blip = 1.0 if (u < 0.44 or u > 0.54) else 0.0
+            freq = 1180.0 if u < 0.48 else 1560.0
+            sig = math.sin(2.0 * math.pi * freq * t) * blip * math.sin(math.pi * min(1.0, u * 2.1))
+            val = max(-32767, min(32767, int(sig * 17500)))
+            l.append(val)
+            r.append(val)
+        self.sounds["warning"] = self._pack_stereo(l, r, volume=0.68)
 
     def play(self, name: str) -> None:
         sound = self.sounds.get(name)

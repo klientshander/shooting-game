@@ -195,6 +195,21 @@ class UI:
             pygame.draw.polygon(surf, (255, 250, 255), rock)
             pygame.draw.polygon(surf, (120, 35, 185), rock, max(1, int(2 * s)))
 
+        elif skill_id == "piercing":
+            # Piercing laser arrow passing straight through target barrier
+            pygame.draw.ellipse(surf, (140, 220, 255), (cx - int(10 * s), cy - int(24 * s), int(20 * s), int(48 * s)), max(2, int(3 * s)))
+            bolt_pts = [
+                (cx - int(30 * s), cy - int(5 * s)),
+                (cx + int(18 * s), cy - int(5 * s)),
+                (cx + int(34 * s), cy),
+                (cx + int(18 * s), cy + int(5 * s)),
+                (cx - int(30 * s), cy + int(5 * s)),
+                (cx - int(22 * s), cy),
+            ]
+            pygame.draw.polygon(surf, (15, 35, 110), [(px + 2, py + 2) for px, py in bolt_pts])
+            pygame.draw.polygon(surf, (255, 255, 255), bolt_pts)
+            pygame.draw.polygon(surf, (90, 235, 255), bolt_pts, max(1, int(2 * s)))
+
         elif skill_id in ("ultimate", "restore_energy"):
             for i in range(8):
                 ang = i * (math.pi / 4)
@@ -239,10 +254,11 @@ class UI:
 
         self.text(surface, "COLLECT RANDOM SKILL & ULTIMATE ORBS IN SPACE!", (WIDTH // 2, 238), GOLD, self.small, True)
 
-        # Showcase the 5 random floating orbs
-        start_x = WIDTH // 2 - 200
+        # Showcase the random floating orbs
+        spacing = 80
+        start_x = WIDTH // 2 - ((len(SKILLS) - 1) * spacing) // 2
         for i, skill in enumerate(SKILLS):
-            self.draw_skill_orb(surface, skill["id"], skill["theme"], (start_x + i * 100, 292), radius=28)
+            self.draw_skill_orb(surface, skill["id"], skill["theme"], (start_x + i * spacing, 292), radius=26)
 
         for i, option in enumerate(options):
             color = CYAN if i == selected else WHITE
@@ -307,7 +323,7 @@ class UI:
             pip_color = (255, 82, 138) if i < player.health else (55, 45, 88)
             pygame.draw.rect(surface, pip_color, (WIDTH - 290 + i * 16, 14, 12, 10), border_radius=2)
 
-        shield_str = f"SHIELD {player.skill_timers['shield']:.1f}s" if player.has_shield else "SHIELD --"
+        shield_str = "SHIELD ACTIVE" if player.has_shield else "SHIELD --"
         shield_col = CYAN if player.has_shield else (140, 155, 185)
         self.text(surface, shield_str, (WIDTH - 180, 12), shield_col, self.hud_med)
 
@@ -324,17 +340,24 @@ class UI:
         self.text(surface, ult_text, (WIDTH - 205, 30), ult_col, self.hud_med)
 
         # Bottom-left Active Collected Skills Bar
-        active_skills = [
-            (sk["id"], sk["theme"], player.skill_timers[sk["id"]])
-            for sk in SKILLS
-            if sk["id"] in player.skill_timers and player.skill_timers[sk["id"]] > 0
-        ]
+        active_skills = []
+        for sk in SKILLS:
+            sk_id = sk["id"]
+            if sk_id == "shield":
+                if player.has_shield:
+                    active_skills.append((sk_id, sk["theme"], None))
+            elif sk_id in player.skill_timers and player.skill_timers[sk_id] > 0:
+                active_skills.append((sk_id, sk["theme"], player.skill_timers[sk_id]))
+
         if active_skills:
             for idx, (sk_id, theme, remaining) in enumerate(active_skills):
                 ox = 42 + idx * 78
                 oy = HEIGHT - 42
                 self.draw_skill_orb(surface, sk_id, theme, (ox, oy), radius=22, selected=True)
-                self.text(surface, f"{int(remaining)}s", (ox, oy + 26), GOLD, self.small, center=True)
+                if remaining is not None:
+                    self.text(surface, f"{int(remaining)}s", (ox, oy + 26), GOLD, self.small, center=True)
+                else:
+                    self.text(surface, "ACTIVE", (ox, oy + 26), CYAN, self.small, center=True)
 
         # Pause button in bottom-right
         self.panel(surface, pygame.Rect(WIDTH - 126, HEIGHT - 57, 108, 30), (16, 26, 86), (72, 185, 255))

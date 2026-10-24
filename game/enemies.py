@@ -6,13 +6,14 @@ import random
 import pygame
 
 
-ENEMY_TYPES = ("scout", "tank", "hunter", "bomber", "elite")
+ENEMY_TYPES = ("scout", "tank", "hunter", "bomber", "elite", "charger")
 COLORS = {
     "scout": (255, 145, 55),
     "tank": (175, 195, 225),
     "hunter": (235, 75, 225),
     "bomber": (195, 85, 255),
     "elite": (255, 210, 75),
+    "charger": (255, 55, 80),
 }
 
 _TAG_FONT = None
@@ -137,6 +138,10 @@ def _get_ufo_sprite(kind, radius):
             tinted = base.copy()
             tinted.fill((45, 15, 75, 0), special_flags=pygame.BLEND_RGB_ADD)
             _UFO_SPRITES[key] = tinted
+        elif kind == "charger":
+            tinted = base.copy()
+            tinted.fill((125, 20, 35, 0), special_flags=pygame.BLEND_RGB_ADD)
+            _UFO_SPRITES[key] = tinted
         else:
             _UFO_SPRITES[key] = base
     except Exception:
@@ -166,24 +171,52 @@ class Enemy:
         self.age = random.random() * 6.28
 
         # Fair starting base health (scales up smoothly over survival time)
-        base_health = {"scout": 2, "tank": 7, "hunter": 4, "bomber": 5, "elite": 13}[self.kind]
+        base_health = {"scout": 2, "tank": 7, "hunter": 4, "bomber": 5, "elite": 13, "charger": 3}[self.kind]
         self.max_health = max(1, int(base_health * health_mult))
         self.health = self.max_health
         self.damage_lag_health = float(self.max_health)
 
         # Accessible base speeds at start (scales up smoothly over survival time)
-        base_speed = {"scout": 235, "tank": 115, "hunter": 215, "bomber": 170, "elite": 145}[self.kind]
+        base_speed = {"scout": 235, "tank": 115, "hunter": 215, "bomber": 170, "elite": 145, "charger": 195}[self.kind]
         self.speed = base_speed * speed_mult
 
         self.damage = max(damage, 2 if self.kind in ("tank", "elite") else 1)
-        self.radius = {"scout": 19, "tank": 28, "hunter": 21, "bomber": 23, "elite": 30}[self.kind]
-        self.reward = {"scout": 100, "tank": 240, "hunter": 180, "bomber": 220, "elite": 450}[self.kind]
+        self.radius = {"scout": 19, "tank": 28, "hunter": 21, "bomber": 23, "elite": 30, "charger": 20}[self.kind]
+        self.reward = {"scout": 100, "tank": 240, "hunter": 180, "bomber": 220, "elite": 450, "charger": 210}[self.kind]
 
         # Strictly straight horizontal movement across the screen (no vertical drift, no shooting)
         self.vx = -self.speed
         self.vy = 0.0
 
+        # Special state machine for Charger (warning signal light + straight red line at spawn, then hyper-sprint)
+        self.state = "normal"
+        if self.kind == "charger":
+            self.state = "warning"
+            self.warning_timer = 1.10
+            self.warning_total = 1.10
+            self.warning_sound_played = False
+            self.sprint_speed = 920.0 * speed_mult
+            self.vx = 0.0
+            self.vy = 0.0
+
     def update(self, dt, player_x=0.0, player_y=0.0):
+        event = None
+        if self.kind == "charger":
+            if self.state == "warning":
+                self.vx = 0.0
+                self.vy = 0.0
+                if not self.warning_sound_played:
+                    self.warning_sound_played = True
+                    event = "warning"
+                self.warning_timer -= dt
+                if self.warning_timer <= 0.0:
+                    self.state = "sprint"
+                    self.vx = -self.sprint_speed
+                    self.damage = max(self.damage, 2)
+                    event = "sprint"
+            elif self.state == "sprint":
+                self.vx = -self.sprint_speed
+
         self.age += dt
         self.hit_flash = max(0.0, self.hit_flash - dt)
         self.x += self.vx * dt
@@ -195,7 +228,7 @@ class Enemy:
         else:
             self.damage_lag_health = float(self.health)
 
-        return None
+        return event
 
     def is_offscreen(self, width=1280, height=720):
         margin = 130
@@ -225,22 +258,84 @@ class Enemy:
             pygame.draw.circle(surface, (255, 255, 255), (edge_x - 4 - pulse, edge_y), 2)
 
     def draw(self, surface, offset=(0, 0)):
-        x, y = int(self.x + offset[0]), int(self.y + offset[1])
+        # Apply high-frequency vibration offset when Charger is charging up
+        shk_y = int(math.sin(self.age * 55.0) * 2.0) if getattr(self, "state", None) == "warning" else 0
+        x, y = int(self.x + offset[0]), int(self.y + offset[1] + shk_y)
         r = self.radius
         flash = self.hit_flash > 0
         primary = (255, 255, 250) if flash else self.color
 
+        # If Charger is in warning state, render high-tech laser targeting line straight across screen
+        if self.kind == "charger" and getattr(self, "state", None) == "warning" and x > 0:
+            warn_pct = max(0.0, min(1.0, 1.0 - (self.warning_timer / max(0.001, self.warning_total))))
+            pulse = math.sin(self.age * 28.0)
+            line_alpha = int(140 + warn_pct * 95 + pulse * 20)
+
+            # Outer danger glow beam spanning to far left edge
+            beam_w = max(1, x)
+            beam_h = 6 if warn_pct > 0.4 else 4
+            beam_surf = pygame.Surface((beam_w, beam_h), pygame.SRCALPHA)
+            beam_surf.fill((255, 30, 60, min(255, line_alpha // 2)))
+            surface.blit(beam_surf, (0, y - beam_h // 2))
+
+            # Inner sharp laser line
+            core_surf = pygame.Surface((beam_w, 2), pygame.SRCALPHA)
+            core_surf.fill((255, 235, 245, min(255, line_alpha)))
+            surface.blit(core_surf, (0, y - 1))
+
+            # Dynamic animated warning chevrons traveling left along the line
+            chev_step = 130
+            chev_off = int((self.age * 460.0) % chev_step)
+            for cx_lane in range(x - chev_off, 0, -chev_step):
+                if cx_lane > 10:
+                    pts = [(cx_lane, y - 5), (cx_lane - 7, y), (cx_lane, y + 5)]
+                    pygame.draw.lines(surface, (255, 240, 245, min(255, line_alpha)), False, pts, 2)
+
+            # Signal warning light beacon at right spawn edge
+            sig_pulse = math.sin(self.age * 22.0)
+            sig_r = int(24 + sig_pulse * 6)
+            sig_surf = pygame.Surface((sig_r * 2 + 4, sig_r * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(sig_surf, (255, 25, 55, int(160 + sig_pulse * 75)), (sig_r + 2, sig_r + 2), sig_r)
+            surface.blit(sig_surf, (x - sig_r - 2, y - sig_r - 2))
+
+            # Expanding warning shockwave ring
+            ring_phase = (self.age * 3.2) % 1.0
+            ring_r = int(ring_phase * 38)
+            ring_alpha = int(220 * (1.0 - ring_phase))
+            if ring_r > 3 and ring_alpha > 10:
+                ring_surf = pygame.Surface((ring_r * 2 + 4, ring_r * 2 + 4), pygame.SRCALPHA)
+                pygame.draw.circle(ring_surf, (255, 80, 100, ring_alpha), (ring_r + 2, ring_r + 2), ring_r, 2)
+                surface.blit(ring_surf, (x - ring_r - 2, y - ring_r - 2))
+
+            # Hot white core
+            pygame.draw.circle(surface, (255, 250, 255), (x, y), 6)
+            pygame.draw.circle(surface, (255, 215, 80), (x, y), 10, 2)
+
+            # Tactical warning badge hovering above the spawn signal light
+            tag_font = _get_tag_font()
+            badge_txt = tag_font.render("! CHARGER !", True, (255, 245, 250))
+            bw, bh = badge_txt.get_size()
+            bx_pos = x - bw // 2
+            by_pos = y - r - bh - 6
+            pygame.draw.rect(surface, (160, 18, 32), (bx_pos - 3, by_pos - 1, bw + 6, bh + 2), border_radius=3)
+            pygame.draw.rect(surface, (255, 65, 85), (bx_pos - 3, by_pos - 1, bw + 6, bh + 2), 1, border_radius=3)
+            surface.blit(badge_txt, (bx_pos, by_pos))
+
         # Ambient glow beneath enemy/meteor
         glow_r = r + 15
         glow = pygame.Surface((glow_r * 2 + 2, glow_r * 2 + 2), pygame.SRCALPHA)
-        glow_alpha = 40 if self.kind == "tank" else 65
+        glow_alpha = 40 if self.kind == "tank" else (85 if self.kind == "charger" else 65)
         pygame.draw.circle(glow, (*self.color, glow_alpha), (glow_r + 1, glow_r + 1), glow_r)
         surface.blit(glow, (x - glow_r - 1, y - glow_r - 1))
 
-        # Holographic tactical targeting brackets for Elites and Tanks
-        if self.kind in ("elite", "tank"):
+        # Holographic tactical targeting brackets for Elites, Tanks, and Chargers
+        if self.kind in ("elite", "tank", "charger"):
             bracket_r = r + 9
-            bracket_col = (255, 220, 85, 140) if self.kind == "elite" else (170, 195, 230, 130)
+            bracket_col = (
+                (255, 220, 85, 140) if self.kind == "elite"
+                else (170, 195, 230, 130) if self.kind == "tank"
+                else (255, 65, 85, 150)
+            )
             bs = 7
             bracket_surf = pygame.Surface((bracket_r * 2 + 4, bracket_r * 2 + 4), pygame.SRCALPHA)
             bc = bracket_r + 2
@@ -255,12 +350,24 @@ class Enemy:
             pygame.draw.lines(bracket_surf, bracket_col, False, [(bc + bracket_r - bs, bc + bracket_r), (bc + bracket_r, bc + bracket_r), (bc + bracket_r, bc + bracket_r - bs)], 2)
             surface.blit(bracket_surf, (x - bc, y - bc))
 
+        # If Charger is in full sprint, draw supersonic jet exhaust flames behind it
+        if self.kind == "charger" and getattr(self, "state", None) == "sprint":
+            flame_len = random.randint(48, 72)
+            flame_pts = [(x + r - 2, y - 8), (x + r + flame_len, y), (x + r - 2, y + 8)]
+            pygame.draw.polygon(surface, (255, 65, 45), flame_pts)
+            core_pts = [(x + r - 1, y - 4), (x + r + int(flame_len * 0.65), y), (x + r - 1, y + 4)]
+            pygame.draw.polygon(surface, (255, 245, 150), core_pts)
+            for roff in (flame_len * 0.35, flame_len * 0.70):
+                rx = int(x + r + roff)
+                pygame.draw.ellipse(surface, (255, 140, 70), (rx - 3, y - 9, 6, 18), 1)
+
         # Antigravity propulsion beam beneath UFO (aliens only, not asteroids)
         if self.kind != "tank":
             beam_pulse = int(math.sin(self.age * 16.0) * 4)
+            beam_color = (255, 95, 115, 110) if self.kind == "charger" else (80, 220, 255, 90)
             pygame.draw.polygon(
                 surface,
-                (80, 220, 255, 90),
+                beam_color,
                 [(x - 8, y + 10), (x - 14 - beam_pulse, y + 24), (x + 8 + beam_pulse, y + 24), (x + 8, y + 10)],
             )
 
@@ -286,18 +393,18 @@ class Enemy:
                     surface.blit(sprite, sprite.get_rect(center=(x, y)))
 
         # UPGRADED HOLOGRAPHIC ENEMY HEALTH BAR & UI BADGE
-        show_bar = (self.health < self.max_health) or (self.kind in ("elite", "tank"))
+        show_bar = (self.health < self.max_health) or (self.kind in ("elite", "tank", "charger"))
         if show_bar:
             bar_w = max(40, r * 2 + 10)
             bar_h = 5
             bx = x - bar_w // 2
             by = y - r - 15
 
-            # Micro archetype badge for Elite & Tank
-            if self.kind in ("elite", "tank"):
+            # Micro archetype badge for Elite, Tank & Charger
+            if self.kind in ("elite", "tank", "charger"):
                 tag_font = _get_tag_font()
-                badge_text = "ELITE" if self.kind == "elite" else "ASTEROID"
-                badge_col = (255, 225, 90) if self.kind == "elite" else (175, 205, 240)
+                badge_text = "ELITE" if self.kind == "elite" else "ASTEROID" if self.kind == "tank" else "CHARGER"
+                badge_col = (255, 225, 90) if self.kind == "elite" else (175, 205, 240) if self.kind == "tank" else (255, 75, 95)
                 rendered_badge = tag_font.render(badge_text, True, badge_col)
                 bw, bh = rendered_badge.get_size()
                 badge_x = x - bw // 2
