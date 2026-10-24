@@ -46,7 +46,10 @@ class CosmicRift:
         pygame.init()
         pygame.display.set_caption(TITLE)
         self.fullscreen = False
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE | pygame.SCALED)
+        if sys.platform == "emscripten":
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        else:
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
         self.canvas = pygame.Surface((WIDTH, HEIGHT))
         self.clock = pygame.time.Clock()
         self.ui = UI()
@@ -307,8 +310,11 @@ class CosmicRift:
 
     def _toggle_fullscreen(self) -> None:
         self.fullscreen = not self.fullscreen
-        flags = pygame.FULLSCREEN if self.fullscreen else (pygame.RESIZABLE | pygame.SCALED)
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+        if sys.platform == "emscripten":
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        else:
+            flags = pygame.FULLSCREEN if self.fullscreen else pygame.RESIZABLE
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
         self._save_high_score()
 
     def _begin_game(self) -> None:
