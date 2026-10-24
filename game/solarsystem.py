@@ -469,7 +469,10 @@ class SolarSystemBackground:
                     depth_scale = 1.0 + _clamp(sz / 550.0, -0.25, 0.40)
                     cur_w = max(4, int(p.surf.get_width() * depth_scale))
                     cur_h = max(4, int(p.surf.get_height() * depth_scale))
-                    p_scaled = pygame.transform.smoothscale(p.surf, (cur_w, cur_h))
+                    if cur_w == p.surf.get_width() and cur_h == p.surf.get_height():
+                        p_scaled = p.surf.copy()
+                    else:
+                        p_scaled = pygame.transform.scale(p.surf, (cur_w, cur_h))
 
                     # Dynamic Terminator Shadow Shading:
                     # Direction towards the Sun

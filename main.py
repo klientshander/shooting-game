@@ -46,7 +46,7 @@ class CosmicRift:
         pygame.init()
         pygame.display.set_caption(TITLE)
         self.fullscreen = False
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE | pygame.SCALED)
         self.canvas = pygame.Surface((WIDTH, HEIGHT))
         self.clock = pygame.time.Clock()
         self.ui = UI()
@@ -107,6 +107,38 @@ class CosmicRift:
         self.canvas_mouse = (WIDTH / 2.0, HEIGHT / 2.0)
         self._init_stars()
         self.reset_game()
+
+    def _get_viewport(self) -> tuple[int, int, int, int]:
+        """Compute centered 16:9 letterboxed viewport rect within current window."""
+        disp_w, disp_h = self.screen.get_size()
+        target_ar = WIDTH / HEIGHT
+        curr_ar = disp_w / max(1, disp_h)
+        if curr_ar > target_ar:
+            fit_h = disp_h
+            fit_w = int(fit_h * target_ar)
+        else:
+            fit_w = disp_w
+            fit_h = int(fit_w / target_ar)
+        off_x = (disp_w - fit_w) // 2
+        off_y = (disp_h - fit_h) // 2
+        return off_x, off_y, fit_w, fit_h
+
+    def _update_backgrounds(self, dt: float, is_holding_warp: bool = False) -> None:
+        """Update only active background engines to eliminate browser CPU lag."""
+        active = {self.current_bg}
+        if self.bg_transition < 1.0 and self.prev_bg:
+            active.add(self.prev_bg)
+
+        if "solarsystem" in active:
+            self.solarsystem.update(dt, mouse_pos=self.canvas_mouse)
+        if "lightpillar" in active:
+            self.lightpillar.update(dt, mouse_pos=self.canvas_mouse)
+        if "lightfall" in active:
+            self.lightfall.update(dt, mouse_pos=self.canvas_mouse, is_holding_warp=is_holding_warp)
+        if "particles" in active:
+            self.particles_bg.update(dt, mouse_pos=self.canvas_mouse)
+        if "webthreads" in active:
+            self.webthreads.update(dt, mouse_pos=self.canvas_mouse)
 
     def _pick_random_bg(self, exclude_current: bool = True) -> str:
         options = ["solarsystem", "lightpillar", "stars", "lightfall", "particles", "webthreads"]
@@ -275,7 +307,7 @@ class CosmicRift:
 
     def _toggle_fullscreen(self) -> None:
         self.fullscreen = not self.fullscreen
-        flags = pygame.FULLSCREEN if self.fullscreen else pygame.RESIZABLE
+        flags = pygame.FULLSCREEN if self.fullscreen else (pygame.RESIZABLE | pygame.SCALED)
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
         self._save_high_score()
 
@@ -486,9 +518,7 @@ class CosmicRift:
             self.last_score_saved = True
 
     def _update_game(self, dt: float) -> None:
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        screen_width, screen_height = self.screen.get_size()
-        aim_pos = (mouse_x * WIDTH / screen_width, mouse_y * HEIGHT / screen_height)
+        aim_pos = self.canvas_mouse
 
         # Single-bullet default continuous shooting (split bullets only with pickup)
         self.player.update(dt, pygame.key.get_pressed(), aim_pos, auto_fire=True)
@@ -699,11 +729,7 @@ class CosmicRift:
         # Update active background engines
         is_dashing = self.player.dash_time > 0.0
         is_holding_warp = is_dashing or pygame.mouse.get_pressed()[0]
-        self.solarsystem.update(dt, mouse_pos=self.canvas_mouse)
-        self.lightpillar.update(dt, mouse_pos=self.canvas_mouse)
-        self.lightfall.update(dt, mouse_pos=self.canvas_mouse, is_holding_warp=is_holding_warp)
-        self.particles_bg.update(dt, mouse_pos=self.canvas_mouse)
-        self.webthreads.update(dt, mouse_pos=self.canvas_mouse)
+        self._update_backgrounds(dt, is_holding_warp)
 
     def _draw_background(self, dt: float) -> None:
         # Pure deep space void
@@ -959,21 +985,35 @@ class CosmicRift:
         # Cinematic anamorphic film vignette (draws focus and enriches cosmic contrast)
         self.canvas.blit(self.vignette_surf, (0, 0))
 
-        display_size = self.screen.get_size()
-        scaled = pygame.transform.smoothscale(self.canvas, display_size)
-        self.screen.blit(scaled, (0, 0))
+        # Presentation to display with centered 16:9 aspect-ratio letterboxing
+        off_x, off_y, fit_w, fit_h = self._get_viewport()
+        disp_w, disp_h = self.screen.get_size()
+        if fit_w == disp_w and fit_h == disp_h and fit_w == WIDTH and fit_h == HEIGHT:
+            self.screen.blit(self.canvas, (0, 0))
+        else:
+            self.screen.fill((0, 0, 0))
+            if fit_w == WIDTH and fit_h == HEIGHT:
+                self.screen.blit(self.canvas, (off_x, off_y))
+            else:
+                scaled = pygame.transform.scale(self.canvas, (fit_w, fit_h))
+                self.screen.blit(scaled, (off_x, off_y))
         pygame.display.flip()
 
     async def run(self) -> None:
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
 
-            # Mouse mapping in canvas space and hold-to-warp detection
+            # Mouse mapping in canvas space preserving 16:9 letterbox framing
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            screen_width, screen_height = self.screen.get_size()
+            off_x, off_y, fit_w, fit_h = self._get_viewport()
+            if fit_w > 0 and fit_h > 0:
+                canvas_x = (mouse_x - off_x) * WIDTH / fit_w
+                canvas_y = (mouse_y - off_y) * HEIGHT / fit_h
+            else:
+                canvas_x, canvas_y = WIDTH / 2.0, HEIGHT / 2.0
             self.canvas_mouse = (
-                mouse_x * WIDTH / max(1, screen_width),
-                mouse_y * HEIGHT / max(1, screen_height),
+                max(0.0, min(float(WIDTH), canvas_x)),
+                max(0.0, min(float(HEIGHT), canvas_y)),
             )
 
             # Mouse hover detection for menus & overlays
@@ -1020,10 +1060,7 @@ class CosmicRift:
                 elif event.type == pygame.KEYDOWN:
                     self._handle_key(event.key)
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    mouse_x, mouse_y = pygame.mouse.get_pos()
-                    screen_width, screen_height = self.screen.get_size()
-                    canvas_x = mouse_x * WIDTH / screen_width
-                    canvas_y = mouse_y * HEIGHT / screen_height
+                    canvas_x, canvas_y = self.canvas_mouse
 
                     # Click on top background badge or menu bottom hint to cycle backgrounds
                     if (45 <= canvas_y <= 95 and abs(canvas_x - WIDTH // 2) <= 160) or (self.state == "menu" and canvas_y >= 645 and canvas_x >= WIDTH // 2 + 60):
@@ -1122,11 +1159,7 @@ class CosmicRift:
             else:
                 if self.bg_transition < 1.0:
                     self.bg_transition = min(1.0, self.bg_transition + dt / self.bg_transition_duration)
-                self.solarsystem.update(dt, mouse_pos=self.canvas_mouse)
-                self.lightpillar.update(dt, mouse_pos=self.canvas_mouse)
-                self.lightfall.update(dt, mouse_pos=self.canvas_mouse, is_holding_warp=False)
-                self.particles_bg.update(dt, mouse_pos=self.canvas_mouse)
-                self.webthreads.update(dt, mouse_pos=self.canvas_mouse)
+                self._update_backgrounds(dt, is_holding_warp=False)
             self._draw(dt)
 
             await asyncio.sleep(0)
